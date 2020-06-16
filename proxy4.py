@@ -1,10 +1,9 @@
 import logging
 import select
 import socket
-import re
 import struct
-from urllib.parse import urlparse
 from socketserver import ThreadingMixIn, TCPServer, StreamRequestHandler
+
 logging.basicConfig(level=logging.DEBUG)
 SOCKS_VERSION = 5
 
@@ -19,21 +18,32 @@ class SocksProxy(StreamRequestHandler):
 
     def handle(self):
         logging.info('Accepting connection from %s:%s' % self.client_address)
+
+        # greeting header
+        # read and unpack 2 bytes from a client
         header = self.connection.recv(2)
-        #logging.info(header[1])
         version, nmethods = struct.unpack("!BB", header)
-        #logging.info("ver: %s"%version)
+
+        # socks 5
         assert version == SOCKS_VERSION
         assert nmethods > 0
+
+        # get available methods
         methods = self.get_available_methods(nmethods)
-        #logging.info(methods)
+
+        # accept only USERNAME/PASSWORD auth
         if 2 not in set(methods):
+            # close connection
             self.server.close_request(self.request)
             return
+
+        # send welcome message
         self.connection.sendall(struct.pack("!BB", SOCKS_VERSION, 2))
 
         if not self.verify_credentials():
             return
+
+        # request
         version, cmd, _, address_type = struct.unpack("!BBBB", self.connection.recv(4))
         assert version == SOCKS_VERSION
 
@@ -43,29 +53,31 @@ class SocksProxy(StreamRequestHandler):
             domain_length = ord(self.connection.recv(1)[0])
             address = self.connection.recv(domain_length)
 
-        
         port = struct.unpack('!H', self.connection.recv(2))[0]
-        logging.info('test %s %s' % (address, port))
+
+        # reply
         try:
-            if cmd == 1: 
+            if cmd == 1:  # CONNECT
                 remote = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 remote.connect((address, port))
                 bind_address = remote.getsockname()
-                #logging.info(bind_address)
                 logging.info('Connected to %s %s' % (address, port))
             else:
                 self.server.close_request(self.request)
 
             addr = struct.unpack("!I", socket.inet_aton(bind_address[0]))[0]
             port = bind_address[1]
-            reply = struct.pack("!BBBBIH", SOCKS_VERSION, 0, 0, address_type,addr, port)
+            reply = struct.pack("!BBBBIH", SOCKS_VERSION, 0, 0, address_type,
+                                addr, port)
 
         except Exception as err:
             logging.error(err)
+            # return connection refused error
             reply = self.generate_failed_reply(address_type, 5)
 
         self.connection.sendall(reply)
-        #logging.info(reply)
+
+        # establish data exchange
         if reply[1] == 0 and cmd == 1:
             self.exchange_loop(self.connection, remote)
 
@@ -88,9 +100,12 @@ class SocksProxy(StreamRequestHandler):
         password = self.connection.recv(password_len).decode('utf-8')
 
         if username == self.username and password == self.password:
+            # success, status = 0
             response = struct.pack("!BB", version, 0)
             self.connection.sendall(response)
             return True
+
+        # failure, status != 0
         response = struct.pack("!BB", version, 0xFF)
         self.connection.sendall(response)
         self.server.close_request(self.request)
@@ -100,74 +115,22 @@ class SocksProxy(StreamRequestHandler):
         return struct.pack("!BBBBIH", SOCKS_VERSION, error_number, 0, address_type, 0, 0)
 
     def exchange_loop(self, client, remote):
-        """
-        data = client.recv(4096)
-        buff=bufferToChunk(data)
-        for buff in bufferToChunk(data):
-            logging.info("client %s"% buff)
-            remote.send(buff)
-        """
+
         while True:
+
+            # wait until client or remote is available for read
             r, w, e = select.select([client, remote], [], [])
 
             if client in r:
                 data = client.recv(4096)
-                
-                buff=bufferToChunk(data)
-                for buff in bufferToChunk(data):
-                    logging.info("client %s"% buff)
-                    if remote.send(buff)<=0:
-                        break
-                """
                 if remote.send(data) <= 0:
                     break
-                """
 
             if remote in r:
                 data = remote.recv(4096)
-                #logging.info(data)
-                #data1=data[:2048]
-                #data2=data[2048:]
-                logging.info("server: %s"%data)
                 if client.send(data) <= 0:
                     break
-                #if client.send(data2) <= 0:
-                #   break
 
-
-class HTTPproxy(StreamRequestHandler):
-    def handle(self):
-        req=self.connection.recv(4096)
-        req2=req.decode('utf-8').split('\r\n')
-        req2=re.split('\s+',req2[0])
-        if isCONNECTMethod(req2[0]):
-            address=socket.gethostbyname()
-            
-            handleHTTPS()
-        else:
-            handleHTTP()
-        logging.info("hello%s"%req)
-    def handleHTTP()
-        pass
-        
-    def handleHTTPS()
-        pass
-
-def isCONNECTMethod(method):
-    if method=='CONNECT': 
-        return True
-    else:
-        return False
-def bufferToChunk(data):
-    r=[]
-    l=len(data)
-    i=0
-    while i<l:
-        x=slice(i,i+100)
-        i+=100
-        r.append(data[x])
-    return r
-        
 
 if __name__ == '__main__':
     with ThreadingTCPServer(('127.0.0.1', 9011), SocksProxy) as server:
