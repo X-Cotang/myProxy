@@ -50,9 +50,9 @@ class SocksProxy(StreamRequestHandler):
         if address_type == 1:  # IPv4
             address = socket.inet_ntoa(self.connection.recv(4))
         elif address_type == 3:  # Domain name
-            domain_length = ord(self.connection.recv(1)[0])
+            domain_length = self.connection.recv(1)[0]
             address = self.connection.recv(domain_length)
-
+            address = socket.gethostbyname(address)
         port = struct.unpack('!H', self.connection.recv(2))[0]
 
         # reply
@@ -67,7 +67,7 @@ class SocksProxy(StreamRequestHandler):
 
             addr = struct.unpack("!I", socket.inet_aton(bind_address[0]))[0]
             port = bind_address[1]
-            reply = struct.pack("!BBBBIH", SOCKS_VERSION, 0, 0, address_type,
+            reply = struct.pack("!BBBBIH", SOCKS_VERSION, 0, 0, 1,
                                 addr, port)
 
         except Exception as err:

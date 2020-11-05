@@ -2,6 +2,7 @@ import logging
 import select
 import socket
 import re
+import os
 import struct
 from urllib.parse import urlparse
 from socketserver import ThreadingMixIn, TCPServer, StreamRequestHandler
@@ -49,6 +50,7 @@ class SocksProxy(StreamRequestHandler):
         try:
             if cmd == 1: 
                 remote = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                #remote.bind('192.168.31.1',0) # bind interface 
                 remote.connect((address, port))
                 bind_address = remote.getsockname()
                 #logging.info(bind_address)
@@ -112,7 +114,7 @@ class SocksProxy(StreamRequestHandler):
 
             if client in r:
                 data = client.recv(4096)
-                
+                """
                 buff=bufferToChunk(data)
                 for buff in bufferToChunk(data):
                     logging.info("client %s"% buff)
@@ -121,7 +123,7 @@ class SocksProxy(StreamRequestHandler):
                 """
                 if remote.send(data) <= 0:
                     break
-                """
+                
 
             if remote in r:
                 data = remote.recv(4096)
@@ -138,33 +140,84 @@ class SocksProxy(StreamRequestHandler):
 class HTTPproxy(StreamRequestHandler):
     def handle(self):
         req=self.connection.recv(4096)
+        logging.info("hello: %s"%req)
+        print(req.decode('utf-8'))
         req2=req.decode('utf-8').split('\r\n')
         req2=re.split('\s+',req2[0])
+
+
+        remote = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        remote.connect(('10.1.19.32', 8080))
+        bind_address = remote.getsockname()
+        remote.sendall(req)
+        print(remote.recv(4096))
+        #logging.info(bind_address)
+        logging.info('Connected to %s %s' % (address, port))
+# chưa xong
         if isCONNECTMethod(req2[0]):
-            address=socket.gethostbyname()
-            
+            address=socket.gethostbyname(req2[1])
+            response=b'HTTP/1.1 200 Connection established\r\nDate: Wed, 17 Jun 2020 09:56:48 GMT\r\nProxy-Connection: Keep-Alive\r\nVia: 1.1 prxho.bank.mb.group'
+            self.connection.send()
             handleHTTPS()
         else:
             handleHTTP()
         logging.info("hello%s"%req)
-    def handleHTTP()
+    def handleHTTP(self):
         pass
         
-    def handleHTTPS()
+    def handleHTTPS(self):
         pass
 
-def isCONNECTMethod(method):
-    if method=='CONNECT': 
-        return True
-    else:
-        return False
+    def isCONNECTMethod(self,method):
+        if method=='CONNECT': 
+            return True
+        else:
+            return False
+
+
+class bridge(StreamRequestHandler):
+    def handle(self):
+        remote = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        remote.connect(('127.0.0.1', 8080))
+        self.loop(self.connection,remote)
+    def loop(self,client,remote):
+        i=10
+        while 1>0:
+            i=i-1
+            r, w, e = select.select([client, remote], [], [])
+            if client in r:
+                d= client.recv(4096)
+                
+                if b"CONNECT" in d:
+                    if remote.send(d)<=0:
+                        break
+                else:
+                    if remote.send(d)<=0:
+                        break
+                logging.info("client send to sv: %s",d)
+                #print(d.decode('utf-8'))
+                """
+                for buff in bufferToChunk(d):
+                    logging.info("client %s"% buff)
+                    if remote.send(buff)<=0:
+                        break
+                """
+            if remote in r:
+                d=remote.recv(4096)
+                if client.send(d)<=0:
+                    break
+                logging.info("Sv send to cl: %s",d)
+                #print(d.decode("utf-8"))
+
+
+
 def bufferToChunk(data):
     r=[]
     l=len(data)
     i=0
     while i<l:
-        x=slice(i,i+100)
-        i+=100
+        x=slice(i,i+5)
+        i+=5
         r.append(data[x])
     return r
         
