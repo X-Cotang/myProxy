@@ -147,7 +147,7 @@ class HTTPproxy(StreamRequestHandler):
 
 
         remote = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        remote.connect(('10.1.19.32', 8080))
+        # remote.connect(('10.1.19.32', 8080))
         bind_address = remote.getsockname()
         remote.sendall(req)
         print(remote.recv(4096))
